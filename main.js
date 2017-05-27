@@ -14,7 +14,8 @@ var canvas,
     mouseX, 
     mouseY,
 
-    bricks = [];
+    bricks = [],
+    bricksLeft = 0;
 
 var Paddle = {
     height: 10,
@@ -39,12 +40,13 @@ window.onload = function(){
     canvas = document.querySelector("#gameCanvas");
     context = canvas.getContext("2d");
 
+    const framesPerSecond = 30;
+    setInterval( updateAll, 1000/framesPerSecond);
+
     canvas.addEventListener('mousemove', updateMousePos);
 
     createBricks();
-
-    const framesPerSecond = 30;
-    setInterval( updateAll, 1000/framesPerSecond);
+    ballReset();
 
 }
 
@@ -54,35 +56,94 @@ function updateAll(){
     drawEverything();
 }
 
-function moveEverything(){
+function isBrickAtColRow( col, row){
+    
+    if( col >= 0 && col < BrickDims.bricksPerRow &&
+        row >= 0 && row < BrickDims.rows ){
 
-    // horizontal movement
-    if ( ballX >= (canvas.width - Ball.radius) ){ // right side
-        ballSpeedX = -ballSpeedX;
-    } else if ( ballX <= (0+Ball.radius) ){ // left side
-        ballSpeedX = -ballSpeedX;
+        var brickIndexUnderCoord = rowColToArrayIndex( col, row);
+        return bricks[brickIndexUnderCoord].isVisible; 
+
+    } else {
+        return false;
+    }
+}
+
+// this moves the ball around the screen, 
+// bouncing off the edges of the screen
+function ballMove(){
+
+    ballX += ballSpeedX;
+    ballY += ballSpeedY;
+
+    if ( ballX < 0 && ballSpeedX < 0.0){
+        ballSpeedX *= -1;
     }
 
-    // vertical movement
-    if ( ballY <= (0+Ball.radius) ){     // top
-        ballSpeedY = -ballSpeedY;
-    } else if( ballY >= (canvas.height - Ball.radius)){ //bottom
+    if ( ballX > canvas.width && ballSpeedX > 0.0 ){
+        ballSpeedX *= -1;
+    }
+
+    if ( ballY < 0 && ballSpeedY < 0.0 ){
+        ballSpeedY *= -1;
+    }
+
+    if ( ballY > canvas.height ){
         ballReset();
+        createBricks();        
     }
+
+}
+
+function ballBrickHandling(){
 
     var ballBrickCol = Math.floor(ballX/BrickDims.width),
         ballBrickRow = Math.floor(ballY/BrickDims.height),
         brickIndex = rowColToArrayIndex(ballBrickCol, ballBrickRow);
 
     if( ballBrickCol >= 0 && ballBrickCol < BrickDims.bricksPerRow && 
-        ballBrickRow >= 0 && ballBrickRow < BrickDims.rows && 
-        brickIndex < (BrickDims.bricksPerRow * BrickDims.rows) ){ 
-        if( bricks[brickIndex] != null){
-            bricks[brickIndex].isVisible = false;
-        } else {
-            console.log("No bricks at index " + brickIndex );
+        ballBrickRow >= 0 && ballBrickRow < BrickDims.rows ){ 
+
+        if( isBrickAtColRow(ballBrickCol, ballBrickRow) ){
+        
+                bricks[brickIndex].isVisible = false;
+                bricksLeft--;
+                console.log('remove brick: ' + ballBrickCol, ballBrickRow);
+
+                var prevBallX = ballX - ballSpeedX, 
+                    prevBallY = ballY - ballSpeedY,
+                    prevBallBrickCol = Math.floor(prevBallX / BrickDims.width),
+                    prevBallBrickRow = Math.floor(prevBallY / BrickDims.height), 
+                    bothTestsFailed = true;
+                
+                if( prevBallBrickCol != ballBrickCol ){
+
+                    if( !isBrickAtColRow(prevBallBrickCol, ballBrickRow) ){                             
+                             bothTestsFailed = false;
+                             ballSpeedY *= -1;
+                             console.log( 'flipping ball Y to ' + ballSpeedY);
+                    }
+                }
+                
+                if( prevBallBrickRow != ballBrickRow ){
+                    if( !isBrickAtColRow(ballBrickCol, prevBallBrickRow) ){
+                            bothTestsFailed = false;
+                            ballSpeedX *= -1;
+                            console.log('flipping ball X to ' + ballSpeedX);
+                    }
+                }
+
+                if( bothTestsFailed ){
+                    ballSpeedX *= -1;
+                    ballSpeedY *= -1;
+                    console.log( 'flipping ball X and Y to ' + ballSpeedX, ballSpeedY);
+                }
+
         }
     }
+}
+
+function ballPaddleHandling(){
 
     var paddleTopEdgeY = canvas.height - Paddle.distFromEdge,
         paddleBottomEdgeY = paddleTopEdgeY + Paddle.height,
@@ -93,16 +154,27 @@ function moveEverything(){
          ballY < paddleBottomEdgeY &&   // above bottom of paddle
          ballX > paddleLeftEdgeX &&     // ball to right of left edge
          ballX < paddleRightEdgeX ){    // ball to left of right edge
+
             ballSpeedY = -ballSpeedY;
 
             var centerOfPaddleX = paddleX + Paddle.width/2,
                 ballDistFromPaddleCenterX = ballX - centerOfPaddleX;
 
                 ballSpeedX = ballDistFromPaddleCenterX * 0.35;
-         }
+            
+            if( bricksLeft == 0 ){
+                createBricks();
+            }
+    }
 
-    ballX += ballSpeedX;
-    ballY += ballSpeedY;
+}
+
+function moveEverything(){
+
+    ballMove();
+    ballBrickHandling();
+    ballPaddleHandling();
+
 }
 
 function drawEverything(){
@@ -132,9 +204,18 @@ function drawMousePosition(){
 }
 
 function createBricks(){
+
+    bricksLeft = 0;
+    bricks = [];
+
     for( var row = 0; row < BrickDims.rows; row++){
         for( var column = 0; column < BrickDims.bricksPerRow; column++){
-            bricks.push( new Brick( BrickDims.width * column, BrickDims.height * row, row, column, true ) );
+
+            bricks.push( new Brick( BrickDims.width * column, BrickDims.height * row, row, column, row > 3 ) );
+            if ( row > 3 ){
+                bricksLeft++;
+            }
+
         }
     }
 }
@@ -179,6 +260,10 @@ function updateMousePos(evt){
     
     paddleX = mouseX - Paddle.width/2;
 
+    // ballX = mouseX;
+    // ballY = mouseY;
+    // ballSpeedX =  4;
+    // ballSpeedY = -4;
 }
 
 function ballReset(){
