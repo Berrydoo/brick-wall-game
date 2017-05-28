@@ -184,7 +184,6 @@ function ballPaddleHandling(){
                 createBricks();
             }
     }
-
 }
 
 function drawEverything(){
